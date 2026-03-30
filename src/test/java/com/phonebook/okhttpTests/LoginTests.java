@@ -2,6 +2,7 @@ package com.phonebook.okhttpTests;
 
 import com.phonebook.core.TestBase;
 import com.phonebook.dto.AuthRequestDto;
+import com.phonebook.dto.ErrorDto;
 import com.phonebook.dto.TokenDto;
 import okhttp3.Request;
 import okhttp3.RequestBody;
@@ -50,11 +51,20 @@ public class LoginTests extends TestBase {
         // response                → содержит статус-код, заголовки и тело ответа
         Response response = client.newCall(request).execute();
 
-        // ШАГ 5 — Проверяем результат (Assert = утверждение)
-        // response.isSuccessful() → true если код ответа 200-299
-        // Если false — тест упадёт с сообщением об ошибке
-        Assert.assertTrue(response.isSuccessful(),
-                "Ожидался успешный вход. Фактический статус: " + response.code());
+        // ШАГ 5 — Проверяем статус-код ответа
+        // assertEquals(200) точнее чем isSuccessful() — проверяет именно 200, а не весь диапазон 200–299
+        Assert.assertEquals(response.code(), 200,
+                "Ожидался статус 200. Фактический статус: " + response.code());
+
+        // ШАГ 6 — Читаем тело ответа и десериализуем JSON в объект TokenDto
+        // response.body().string() → {"token":"eyJhbGciOi..."}
+        // gson.fromJson(...)       → превращает JSON-строку обратно в Java-объект
+        TokenDto tokenDto = gson.fromJson(response.body().string(), TokenDto.class);
+
+        // ШАГ 7 — Проверяем, что токен реально пришёл (не null и не пустой)
+        Assert.assertNotNull(tokenDto.getToken(), "Токен отсутствует в ответе");
+
+        System.out.println("Полученный токен: " + tokenDto.getToken());
     }
 
     // ==================================================================================
@@ -82,10 +92,26 @@ public class LoginTests extends TestBase {
         // ШАГ 4 — Отправляем запрос
         Response response = client.newCall(request).execute();
 
-        // ШАГ 5 — Проверяем, что сервер вернул именно 401
-        // assertEquals(фактическое, ожидаемое, сообщение при провале)
-        Assert.assertEquals(response.code(), 401,
-                "При неверном пароле ожидался статус 401 Unauthorized");
+        // ШАГ 5 — SoftAssert проверяет статус-код, но НЕ останавливает тест при провале
+        // В отличие от Assert — собирает ВСЕ ошибки и показывает их разом в конце через assertAll()
+        softAssert.assertEquals(response.code(), 401,
+                "Ожидался статус 401 при неверном пароле");
+
+        // ШАГ 6 — Десериализуем тело ответа в ErrorDto
+        // Сервер при ошибке возвращает JSON с полями: error (тип) и message (описание)
+        // response.body().string() → {"error":"Unauthorized","message":"Login or Password incorrect"}
+        ErrorDto errorDto = gson.fromJson(response.body().string(), ErrorDto.class);
+
+        // ШАГ 7 — Проверяем поле "error" в теле ответа
+        softAssert.assertEquals(errorDto.getError(), "Unauthorized",
+                "Поле 'error' некорректно");
+
+        // ШАГ 8 — Проверяем поле "message" в теле ответа
+        softAssert.assertEquals(errorDto.getMessage(), "Login or Password incorrect",
+                "Поле 'message' некорректно");
+
+        // ШАГ 9 — assertAll() запускает все отложенные проверки и выводит все ошибки сразу
+        softAssert.assertAll();
     }
 
     // ==================================================================================
